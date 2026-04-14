@@ -241,18 +241,6 @@ async def reset_bdd(interaction: discord.Interaction):
     logger.info("Base de données réinitialisée.")
 
 
-@bot.tree.command(name="reset-bdd", description="[ADMIN] Remet la base de données à zéro (irréversible !)")
-@discord.app_commands.check(is_admin)
-async def reset_bdd(interaction: discord.Interaction):
-    """Efface toutes les données et repart de zéro."""
-    db.reset_all()
-    await interaction.response.send_message(
-        "🗑️ Base de données remise à zéro. Lance `/scanner-historique` pour réimporter.",
-        ephemeral=True
-    )
-    logger.info("Base de données réinitialisée.")
-
-
 @bot.tree.command(name="scanner-historique", description="[ADMIN] Scanne les anciens threads pour récupérer l'historique")
 @discord.app_commands.check(is_admin)
 async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
