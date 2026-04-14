@@ -276,6 +276,8 @@ footer {
   padding: 18px 64px;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 16px;
 }
 footer span {
   font-size: 10px;
@@ -283,6 +285,15 @@ footer span {
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--muted);
+}
+footer .footer-note {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  color: var(--muted);
+  text-align: center;
+  flex: 1;
 }
 
 /* ── RESPONSIVE ── */
@@ -379,6 +390,7 @@ footer span {
 
 <footer>
   <span>Le Héraut · BALO</span>
+  <span class="footer-note">* Le mode streamer peut fausser certaines données du classement</span>
   <span>{{ year }}</span>
 </footer>
 

@@ -23,6 +23,7 @@ class Database:
                 winner_id   TEXT,
                 winner_name TEXT,
                 winner_votes INTEGER DEFAULT 0,
+                manual_override INTEGER DEFAULT 0,
                 created_at  TEXT DEFAULT (datetime('now'))
             );
 
@@ -49,7 +50,12 @@ class Database:
                 updated_at      TEXT DEFAULT (datetime('now'))
             );
         """)
-        self.conn.commit()
+        # Migration : ajoute manual_override si absent (base existante)
+        try:
+            self.conn.execute("ALTER TABLE battles ADD COLUMN manual_override INTEGER DEFAULT 0")
+            self.conn.commit()
+        except Exception:
+            pass  # Colonne déjà présente
 
     # ─── BATTLES ───────────────────────────────────────
 
@@ -229,10 +235,10 @@ class Database:
         return dict(row) if row else None
 
     def force_winner(self, battle_id: int, winner_id: str, winner_name: str):
-        """Écrase le gagnant d'une bataille et marque la bataille comme fermée."""
+        """Écrase le gagnant d'une bataille et la verrouille contre le scanner."""
         self.conn.execute(
             """UPDATE battles
-               SET closed=1, winner_id=?, winner_name=?
+               SET closed=1, winner_id=?, winner_name=?, manual_override=1
                WHERE id=?""",
             (winner_id, winner_name, battle_id)
         )

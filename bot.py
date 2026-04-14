@@ -368,13 +368,11 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 50,
         if participations_thread:
             winner_id = max(participations_thread, key=lambda u: participations_thread[u])
             winner_votes = participations_thread[winner_id]
-            # Met à jour le gagnant dans la bataille si non défini
             b = db.get_battle_by_number(battle_number)
-            if b and not b.get("winner_id"):
-                winner_name = next(
-                    (t.name for t in all_threads if t.id == b["thread_id"]),
-                    "Inconnu"
-                )
+            # Ne touche pas aux batailles avec victoire attribuée manuellement
+            if b and b.get("manual_override"):
+                logger.info(f"Bataille #{battle_number} protégée (manual_override), gagnant conservé.")
+            elif b and not b.get("winner_id"):
                 db.close_battle_silent(battle_id, winner_id, winner_votes)
 
     # Reconstruit tous les user_stats depuis les participations importées
