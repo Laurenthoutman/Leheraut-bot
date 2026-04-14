@@ -222,6 +222,84 @@ class Database:
         """).fetchall()
         return [dict(r) for r in rows]
 
+    def reset_all(self):
+        """Remet toutes les tables à zéro."""
+        self.conn.executescript("""
+            DELETE FROM participations;
+            DELETE FROM battles;
+            DELETE FROM user_stats;
+        """)
+        self.conn.commit()
+
+    def close_battle_silent(self, battle_id: int, winner_id: str, winner_votes: int):
+        """Met à jour le gagnant sans recalculer les stats (utilisé pendant le scan)."""
+        self.conn.execute(
+            "UPDATE battles SET closed=1, winner_id=?, winner_votes=? WHERE id=?",
+            (winner_id, winner_votes, battle_id)
+        )
+        self.conn.commit()
+
+    def rebuild_user_stats(self):
+        """Reconstruit entièrement user_stats depuis les participations et batailles."""
+        self.conn.execute("DELETE FROM user_stats")
+        self.conn.commit()
+
+        # Récupère toutes les batailles fermées triées par numéro
+        battles = self.conn.execute(
+            "SELECT * FROM battles WHERE closed=1 ORDER BY number ASC"
+        ).fetchall()
+
+        # Pour chaque utilisateur, reconstruit les stats en ordre chronologique
+        user_data = {}  # user_id -> {participations, victories, current_streak, best_streak, last_battle_number}
+
+        for battle in battles:
+            bid = battle["id"]
+            bnum = battle["number"]
+            winner_id = battle["winner_id"]
+
+            parts = self.conn.execute(
+                "SELECT * FROM participations WHERE battle_id=?", (bid,)
+            ).fetchall()
+
+            for p in parts:
+                uid = p["user_id"]
+                uname = p["username"]
+
+                if uid not in user_data:
+                    user_data[uid] = {
+                        "username": uname,
+                        "participations": 0,
+                        "victories": 0,
+                        "current_streak": 0,
+                        "best_streak": 0,
+                        "last_battle_number": None,
+                    }
+
+                d = user_data[uid]
+                d["participations"] += 1
+                if uid == winner_id:
+                    d["victories"] += 1
+
+                # Calcul du streak
+                if d["last_battle_number"] is not None and bnum == d["last_battle_number"] + 1:
+                    d["current_streak"] += 1
+                else:
+                    d["current_streak"] = 1
+
+                d["best_streak"] = max(d["best_streak"], d["current_streak"])
+                d["last_battle_number"] = bnum
+
+        # Insère les stats reconstruites
+        for uid, d in user_data.items():
+            self.conn.execute(
+                """INSERT INTO user_stats
+                   (user_id, username, participations, victories, current_streak, best_streak)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (uid, d["username"], d["participations"], d["victories"],
+                 d["current_streak"], d["best_streak"])
+            )
+        self.conn.commit()
+
     def get_recent_battles(self, limit: int = 10) -> list:
         rows = self.conn.execute("""
             SELECT * FROM battles WHERE closed=1
