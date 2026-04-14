@@ -450,4 +450,4 @@ async def update_roles(guild: discord.Guild, user_id: str):
 # LANCEMENT
 # ─────────────────────────────────────────────
 
-bot.run(os.getenv("DISCORD_TOKEN"))
+# Le bot est lancé depuis main.py
