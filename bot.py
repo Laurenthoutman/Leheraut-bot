@@ -293,7 +293,87 @@ async def attribuer_victoire(interaction: discord.Interaction, numero: int, user
     logger.info(f"Victoire #{numero} attribuée manuellement à {match['username']}")
 
 
-@bot.tree.command(name="scanner-historique", description="[ADMIN] Scanne les anciens threads pour récupérer l'historique")
+@bot.tree.command(name="whois", description="[ADMIN] Identifie un membre Discord depuis son ID")
+@discord.app_commands.check(is_admin)
+async def whois(interaction: discord.Interaction, user_id: str):
+    """Résout le vrai pseudo d'un membre depuis son ID, même en mode streamer."""
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        member = interaction.guild.get_member(int(user_id))
+        if not member:
+            member = await interaction.guild.fetch_member(int(user_id))
+    except discord.NotFound:
+        await interaction.followup.send(f"❌ Aucun membre trouvé avec l'ID `{user_id}`.", ephemeral=True)
+        return
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erreur : {e}", ephemeral=True)
+        return
+
+    streamer_mode = member.display_name != member.name and len(member.display_name) <= 4
+
+    embed = discord.Embed(title="🔍 Whois", color=discord.Color.blurple())
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.add_field(name="🪪 ID", value=f"`{member.id}`", inline=False)
+    embed.add_field(name="👤 Username global", value=member.name, inline=True)
+    embed.add_field(name="📛 Pseudo sur le serveur", value=member.display_name, inline=True)
+    embed.add_field(name="🎭 Mode streamer", value="⚠️ Probablement actif" if streamer_mode else "Non détecté", inline=True)
+
+    stats = db.get_user_stats(str(member.id))
+    if stats:
+        embed.add_field(
+            name="📊 Stats BALO",
+            value=f"Enregistré sous : **{stats['username']}**\n"
+                  f"Victoires : {stats['victories']} · Participations : {stats['participations']}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="📊 Stats BALO", value="Aucune donnée en base", inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+
+@discord.app_commands.check(is_admin)
+async def debug_joueur(interaction: discord.Interaction, user_id: str):
+    """Affiche tout ce que la base contient pour un user_id donné."""
+    await interaction.response.defer(ephemeral=True)
+
+    stats = db.get_user_stats(user_id)
+    participations = db.get_all_participations_for_user(user_id)
+    battles_won = db.get_battles_won_by(user_id)
+
+    embed = discord.Embed(title=f"🔍 Debug — {user_id}", color=discord.Color.blurple())
+
+    if stats:
+        embed.add_field(
+            name="📊 user_stats",
+            value=f"Username: **{stats['username']}**\n"
+                  f"Participations: {stats['participations']}\n"
+                  f"Victoires: {stats['victories']}\n"
+                  f"Streak actuel: {stats['current_streak']}\n"
+                  f"Meilleur streak: {stats['best_streak']}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="📊 user_stats", value="❌ Aucune entrée trouvée", inline=False)
+
+    if participations:
+        lines = [f"Bataille #{p['battle_number']} — msg {p['message_id']} — {p['votes']} votes" for p in participations[:10]]
+        embed.add_field(name=f"🎨 Participations ({len(participations)})", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="🎨 Participations", value="❌ Aucune participation trouvée", inline=False)
+
+    if battles_won:
+        lines = [f"Bataille #{b['number']} — {b['theme']}" for b in battles_won]
+        embed.add_field(name=f"🏆 Victoires en base ({len(battles_won)})", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="🏆 Victoires en base", value="❌ Aucune victoire enregistrée", inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+
 @discord.app_commands.check(is_admin)
 async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
     """

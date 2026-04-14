@@ -228,6 +228,24 @@ class Database:
         """).fetchall()
         return [dict(r) for r in rows]
 
+    def get_all_participations_for_user(self, user_id: str) -> list:
+        rows = self.conn.execute("""
+            SELECT p.*, b.number as battle_number
+            FROM participations p
+            JOIN battles b ON b.id = p.battle_id
+            WHERE p.user_id = ?
+            ORDER BY b.number ASC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_battles_won_by(self, user_id: str) -> list:
+        rows = self.conn.execute("""
+            SELECT * FROM battles
+            WHERE winner_id = ? AND closed = 1
+            ORDER BY number ASC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_user_stats_by_username(self, username: str) -> Optional[dict]:
         row = self.conn.execute(
             "SELECT * FROM user_stats WHERE LOWER(username)=LOWER(?)", (username,)
