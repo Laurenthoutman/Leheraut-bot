@@ -222,6 +222,22 @@ class Database:
         """).fetchall()
         return [dict(r) for r in rows]
 
+    def get_user_stats_by_username(self, username: str) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT * FROM user_stats WHERE LOWER(username)=LOWER(?)", (username,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def force_winner(self, battle_id: int, winner_id: str, winner_name: str):
+        """Écrase le gagnant d'une bataille et marque la bataille comme fermée."""
+        self.conn.execute(
+            """UPDATE battles
+               SET closed=1, winner_id=?, winner_name=?
+               WHERE id=?""",
+            (winner_id, winner_name, battle_id)
+        )
+        self.conn.commit()
+
     def reset_all(self):
         """Remet toutes les tables à zéro."""
         self.conn.executescript("""

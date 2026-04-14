@@ -241,6 +241,58 @@ async def reset_bdd(interaction: discord.Interaction):
     logger.info("Base de données réinitialisée.")
 
 
+@bot.tree.command(name="attribuer-victoire", description="[ADMIN] Attribue manuellement la victoire d'une bataille à un joueur")
+@discord.app_commands.check(is_admin)
+async def attribuer_victoire(interaction: discord.Interaction, numero: int, username: str):
+    """
+    Corrige ou attribue manuellement le gagnant d'une bataille passée.
+    numero   : numéro de la bataille (ex: 217)
+    username : pseudo exact du joueur tel qu'il apparaît dans le classement
+    """
+    await interaction.response.defer(ephemeral=True)
+
+    battle = db.get_battle_by_number(numero)
+    if not battle:
+        await interaction.followup.send(f"❌ Bataille #{numero} introuvable en base.", ephemeral=True)
+        return
+
+    # Cherche le joueur par username dans les participations de cette bataille
+    participations = db.get_participations(battle["id"])
+    match = None
+    for p in participations:
+        if p["username"].lower() == username.lower():
+            match = p
+            break
+
+    # Si pas trouvé dans les participations, cherche dans user_stats
+    if not match:
+        stats = db.get_user_stats_by_username(username)
+        if stats:
+            match = {"user_id": stats["user_id"], "username": stats["username"]}
+
+    if not match:
+        names = [p["username"] for p in participations]
+        await interaction.followup.send(
+            f"❌ Joueur **{username}** introuvable dans la bataille #{numero}.\n"
+            f"Participants connus : {', '.join(names[:20])}",
+            ephemeral=True
+        )
+        return
+
+    # Applique la victoire
+    old_winner = battle.get("winner_name", "aucun")
+    db.force_winner(battle["id"], match["user_id"], match["username"])
+    db.rebuild_user_stats()
+
+    await interaction.followup.send(
+        f"✅ Victoire de la bataille **#{numero}** attribuée à **{match['username']}**.\n"
+        f"_(ancien gagnant enregistré : {old_winner})_\n"
+        f"Les stats et streaks ont été recalculés.",
+        ephemeral=True
+    )
+    logger.info(f"Victoire #{numero} attribuée manuellement à {match['username']}")
+
+
 @bot.tree.command(name="scanner-historique", description="[ADMIN] Scanne les anciens threads pour récupérer l'historique")
 @discord.app_commands.check(is_admin)
 async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
