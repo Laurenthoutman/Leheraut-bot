@@ -225,10 +225,25 @@ async def monstats(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+@bot.tree.command(name="reset-bdd", description="Remet la base de données à zéro (irréversible !)")
+@discord.app_commands.checks.has_permissions(administrator=True)
+async def reset_bdd(interaction: discord.Interaction):
+    """Efface toutes les données et repart de zéro."""
+    db.reset_all()
+    await interaction.response.send_message(
+        "🗑️ Base de données remise à zéro. Lance `/scanner-historique` pour réimporter.",
+        ephemeral=True
+    )
+    logger.info("Base de données réinitialisée.")
+
+
 @bot.tree.command(name="scanner-historique", description="Scanne les anciens threads pour récupérer l'historique")
 @discord.app_commands.checks.has_permissions(administrator=True)
-async def scanner_historique(interaction: discord.Interaction, limite: int = 50):
-    """Scanne les threads existants pour importer les participations passées."""
+async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
+    """
+    Scanne les threads existants pour importer les participations passées.
+    bataille_min : numéro minimum de bataille à importer (défaut: 205)
+    """
     await interaction.response.defer(ephemeral=True)
 
     channel = bot.get_channel(BATTLE_CHANNEL_ID)
@@ -236,35 +251,36 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 50)
         await interaction.followup.send("❌ Salon introuvable.", ephemeral=True)
         return
 
-    threads = channel.threads
+    threads = list(channel.threads)
     archived = [t async for t in channel.archived_threads(limit=limite)]
-    all_threads = list(threads) + archived
+    all_threads = threads + archived
 
     imported = 0
+    battles_found = 0
+
     for thread in all_threads:
-        # Essaie de détecter le numéro de bataille dans le nom du thread
-        name = thread.name.lower()
+        # Détecte le numéro de bataille dans le nom du thread
+        name = thread.name
         battle_number = None
-        for word in name.split():
-            if word.startswith("#") and word[1:].isdigit():
-                battle_number = int(word[1:])
-                break
-            elif word.isdigit():
+        for word in name.replace("#", " ").split():
+            if word.isdigit():
                 battle_number = int(word)
                 break
 
-        if battle_number is None:
+        if battle_number is None or battle_number < bataille_min:
             continue
+
+        battles_found += 1
 
         # Crée la bataille si elle n'existe pas
         battle = db.get_battle_by_number(battle_number)
         if not battle:
-            theme = thread.name
-            battle_id = db.create_battle(battle_number, theme, thread.id, closed=True)
+            battle_id = db.create_battle(battle_number, name, thread.id, closed=True)
         else:
             battle_id = battle["id"]
 
         # Parcourt les messages du thread
+        participations_thread = {}
         async for message in thread.history(limit=200):
             if message.author.bot:
                 continue
@@ -275,17 +291,44 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 50)
             if not has_image:
                 continue
 
-            already = db.add_participation(battle_id, str(message.author.id), message.author.display_name, message.id)
+            uid = str(message.author.id)
+            uname = message.author.display_name
+
+            already = db.add_participation(battle_id, uid, uname, message.id)
             if not already:
                 imported += 1
 
             # Compte les votes si disponibles
+            votes = 0
             for reaction in message.reactions:
                 if str(reaction.emoji) == VOTE_EMOJI:
-                    db.update_votes(battle_id, str(message.author.id), reaction.count - 1)
+                    votes = max(0, reaction.count - 1)
+            if votes > 0:
+                db.update_votes(battle_id, uid, votes)
+
+            participations_thread[uid] = votes
+
+        # Reconstruit les user_stats pour cette bataille
+        if participations_thread:
+            winner_id = max(participations_thread, key=lambda u: participations_thread[u])
+            winner_votes = participations_thread[winner_id]
+            # Met à jour le gagnant dans la bataille si non défini
+            b = db.get_battle_by_number(battle_number)
+            if b and not b.get("winner_id"):
+                winner_name = next(
+                    (t.name for t in all_threads if t.id == b["thread_id"]),
+                    "Inconnu"
+                )
+                db.close_battle_silent(battle_id, winner_id, winner_votes)
+
+    # Reconstruit tous les user_stats depuis les participations importées
+    db.rebuild_user_stats()
 
     await interaction.followup.send(
-        f"✅ Scan terminé ! **{imported}** participations importées depuis **{len(all_threads)}** threads.",
+        f"✅ Scan terminé !\n"
+        f"• **{battles_found}** batailles trouvées (≥ #{bataille_min})\n"
+        f"• **{imported}** nouvelles participations importées\n"
+        f"• Classement reconstruit ✓",
         ephemeral=True
     )
 
