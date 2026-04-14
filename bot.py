@@ -78,8 +78,12 @@ async def on_message(message):
 # SLASH COMMANDS
 # ─────────────────────────────────────────────
 
-@bot.tree.command(name="nouvelle-bataille", description="Démarre une nouvelle bataille de logos")
-@discord.app_commands.checks.has_permissions(administrator=True)
+async def is_admin(interaction: discord.Interaction) -> bool:
+    return interaction.user.guild_permissions.administrator
+
+
+@bot.tree.command(name="nouvelle-bataille", description="[ADMIN] Démarre une nouvelle bataille de logos")
+@discord.app_commands.check(is_admin)
 async def nouvelle_bataille(interaction: discord.Interaction, numero: int, theme: str, thread_id: str):
     """
     Crée une nouvelle bataille en base de données.
@@ -96,8 +100,8 @@ async def nouvelle_bataille(interaction: discord.Interaction, numero: int, theme
     logger.info(f"Nouvelle bataille créée : #{numero} - {theme}")
 
 
-@bot.tree.command(name="cloturer-vote", description="Clôture le vote et désigne le gagnant")
-@discord.app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="cloturer-vote", description="[ADMIN] Clôture le vote et désigne le gagnant")
+@discord.app_commands.check(is_admin)
 async def cloturer_vote(interaction: discord.Interaction):
     """Compte les checkmarks et désigne le vainqueur de la bataille active."""
     await interaction.response.defer(ephemeral=True)
@@ -225,8 +229,8 @@ async def monstats(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="reset-bdd", description="Remet la base de données à zéro (irréversible !)")
-@discord.app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="reset-bdd", description="[ADMIN] Remet la base de données à zéro (irréversible !)")
+@discord.app_commands.check(is_admin)
 async def reset_bdd(interaction: discord.Interaction):
     """Efface toutes les données et repart de zéro."""
     db.reset_all()
@@ -237,8 +241,8 @@ async def reset_bdd(interaction: discord.Interaction):
     logger.info("Base de données réinitialisée.")
 
 
-@bot.tree.command(name="scanner-historique", description="Scanne les anciens threads pour récupérer l'historique")
-@discord.app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="scanner-historique", description="[ADMIN] Scanne les anciens threads pour récupérer l'historique")
+@discord.app_commands.check(is_admin)
 async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
     """
     Scanne les threads existants pour importer les participations passées.
@@ -333,9 +337,17 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 50,
     )
 
 
-# ─────────────────────────────────────────────
-# TASKS
-# ─────────────────────────────────────────────
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    if isinstance(error, discord.app_commands.CheckFailure):
+        await interaction.response.send_message(
+            "❌ Cette commande est réservée aux administrateurs.", ephemeral=True
+        )
+    else:
+        logger.error(f"Erreur commande : {error}")
+
+
+
 
 @tasks.loop(hours=1)
 async def check_battle_end():

@@ -1,265 +1,490 @@
 from flask import Flask, jsonify, render_template_string
 from database import Database
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 db = Database()
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
+HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BALO — Classement</title>
+<title>BALO — Classement 2026</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --gold:   #F5C842;
-    --silver: #C0C0C0;
-    --bronze: #CD7F32;
-    --bg:     #0D0D0D;
-    --surface:#141414;
-    --border: #222;
-    --text:   #EAEAEA;
-    --muted:  #666;
-  }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0a0a0a;
+  --surface: #111111;
+  --ink:     #ffffff;
+  --muted:   #555555;
+  --rule:    #1e1e1e;
+  --hover:   #161616;
+  --active:  #ffffff;
+  --pill-bg: #ffffff;
+  --pill-fg: #000000;
+}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    min-height: 100vh;
-    padding: 0 0 80px;
-  }
+html { scroll-behavior: smooth; }
 
-  /* ── HERO ── */
-  .hero {
-    position: relative;
-    padding: 64px 32px 48px;
-    text-align: center;
-    overflow: hidden;
-  }
-  .hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(245,200,66,.15) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  .hero-eyebrow {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 13px;
-    letter-spacing: 4px;
-    color: var(--gold);
-    margin-bottom: 12px;
-  }
-  .hero-title {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(52px, 10vw, 96px);
-    line-height: 1;
-    letter-spacing: 2px;
-    background: linear-gradient(135deg, #fff 30%, var(--gold));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .hero-sub {
-    margin-top: 12px;
-    font-size: 14px;
-    color: var(--muted);
-    letter-spacing: 1px;
-  }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
 
-  /* ── STATS BAR ── */
-  .stats-bar {
-    display: flex;
-    justify-content: center;
-    gap: 48px;
-    padding: 24px 32px;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 48px;
-  }
-  .stat-item { text-align: center; }
-  .stat-value {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 36px;
-    color: var(--gold);
-    line-height: 1;
-  }
-  .stat-label {
-    font-size: 11px;
-    letter-spacing: 2px;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-top: 4px;
-  }
+/* ── HEADER ── */
+header {
+  padding: 52px 64px 40px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
 
-  /* ── TABLE ── */
-  .table-wrap {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 0 20px;
-  }
-  .table-header {
-    display: grid;
-    grid-template-columns: 56px 1fr 80px 80px 80px 80px;
-    padding: 0 20px 12px;
-    font-size: 11px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .row {
-    display: grid;
-    grid-template-columns: 56px 1fr 80px 80px 80px 80px;
-    align-items: center;
-    padding: 16px 20px;
-    border-radius: 12px;
-    margin-bottom: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    transition: transform .15s, border-color .15s;
-    animation: fadeUp .4s both;
-  }
-  .row:hover {
-    transform: translateY(-2px);
-    border-color: #333;
-  }
-  .row:nth-child(1) { border-color: rgba(245,200,66,.4); animation-delay: .05s; }
-  .row:nth-child(2) { border-color: rgba(192,192,192,.3); animation-delay: .10s; }
-  .row:nth-child(3) { border-color: rgba(205,127,50,.3);  animation-delay: .15s; }
+.header-title {
+  font-size: clamp(42px, 6.5vw, 76px);
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: -3px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
 
-  @keyframes fadeUp {
-    from { opacity:0; transform: translateY(16px); }
-    to   { opacity:1; transform: translateY(0); }
-  }
+.header-meta {
+  text-align: right;
+  flex-shrink: 0;
+  padding-bottom: 4px;
+}
 
-  .rank {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 22px;
-    color: var(--muted);
-  }
-  .rank.gold   { color: var(--gold); }
-  .rank.silver { color: var(--silver); }
-  .rank.bronze { color: var(--bronze); }
+.header-meta .eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 6px;
+}
 
-  .username {
-    font-size: 15px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .streak-badge {
-    font-size: 11px;
-    background: rgba(245,200,66,.15);
-    border: 1px solid rgba(245,200,66,.3);
-    color: var(--gold);
-    border-radius: 20px;
-    padding: 2px 8px;
-    white-space: nowrap;
-  }
+.header-meta .desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  max-width: 200px;
+}
 
-  .cell {
-    font-size: 14px;
-    text-align: center;
-    color: var(--text);
-  }
-  .cell.victories {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 20px;
-    color: var(--gold);
-  }
-  .cell.winrate { color: var(--muted); font-size: 13px; }
+/* ── STATS ── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--rule);
+}
 
-  /* ── FOOTER ── */
-  .footer {
-    text-align: center;
-    margin-top: 64px;
-    font-size: 12px;
-    color: var(--muted);
-    letter-spacing: 1px;
-  }
+.stat {
+  padding: 28px 64px;
+  border-right: 1px solid var(--rule);
+}
+.stat:last-child { border-right: none; }
 
-  @media (max-width: 600px) {
-    .table-header, .row {
-      grid-template-columns: 40px 1fr 60px 60px;
-    }
-    .cell.winrate, .table-header .h-winrate { display: none; }
-    .cell.streak-col, .table-header .h-streak { display: none; }
-  }
+.stat-value {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -2px;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 7px;
+}
+
+/* ── SORT TABS ── */
+.sort-bar {
+  padding: 28px 64px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sort-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.sort-btn {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 7px 16px;
+  border-radius: 2px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.sort-btn:hover {
+  border-color: #333;
+  color: var(--ink);
+}
+
+.sort-btn.active {
+  background: var(--pill-bg);
+  color: var(--pill-fg);
+  border-color: var(--pill-bg);
+}
+
+/* ── TABLE ── */
+.table-wrap { padding: 24px 64px 80px; }
+
+/* rang | nom | victoires | participations | streak */
+.grid5 {
+  display: grid;
+  grid-template-columns: 52px 1fr 120px 145px 110px;
+  align-items: center;
+}
+
+.thead {
+  border-bottom: 1px solid #2a2a2a;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+
+.thead span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  user-select: none;
+}
+
+.thead .r { text-align: right; }
+
+.thead .sortable {
+  cursor: pointer;
+  transition: color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.thead .sortable:hover { color: var(--ink); }
+.thead .sortable.active { color: var(--ink); }
+
+.sort-arrow {
+  font-size: 8px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.thead .sortable.active .sort-arrow { opacity: 1; }
+
+/* ROWS */
+#rows-container { position: relative; }
+
+.trow {
+  border-bottom: 1px solid var(--rule);
+  padding: 13px 0;
+  transition: background .1s;
+  will-change: transform, opacity;
+}
+
+.trow:hover { background: var(--hover); }
+
+.c-rank {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  transition: color .2s;
+}
+.c-rank.r1 { font-size: 14px; font-weight: 900; color: var(--ink); }
+.c-rank.r2, .c-rank.r3 { font-weight: 700; color: #666; }
+
+.c-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 16px;
+  color: var(--ink);
+}
+
+.c-name .uname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fire-pill {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+.c-num {
+  font-size: 14px;
+  font-weight: 500;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  transition: color .2s, font-weight .2s;
+}
+.c-num.highlight { font-weight: 800; font-size: 15px; }
+.c-num.dim       { color: var(--muted); font-weight: 400; }
+
+.empty {
+  padding: 64px 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── FOOTER ── */
+footer {
+  border-top: 1px solid var(--rule);
+  padding: 18px 64px;
+  display: flex;
+  justify-content: space-between;
+}
+footer span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 720px) {
+  header { padding: 28px 20px 24px; flex-direction: column; align-items: flex-start; }
+  .header-meta { text-align: left; }
+  .header-meta .desc { max-width: 100%; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat { padding: 18px 20px; }
+  .stat:nth-child(3) { grid-column: 1/-1; border-right: none; border-top: 1px solid var(--rule); }
+  .sort-bar { padding: 20px 20px 0; flex-wrap: wrap; }
+  .table-wrap { padding: 16px 20px 48px; }
+  .grid5 { grid-template-columns: 36px 1fr 72px 84px; }
+  .col-streak { display: none; }
+  .th-streak { display: none !important; }
+  footer { padding: 14px 20px; }
+}
 </style>
 </head>
 <body>
 
-<div class="hero">
-  <div class="hero-eyebrow">Serveur BALO</div>
-  <div class="hero-title">Bataille<br>de Logos</div>
-  <div class="hero-sub">Classement général · Mis à jour en temps réel</div>
-</div>
+<header>
+  <div class="header-title">Bataille<br>de Logos</div>
+  <div class="header-meta">
+    <span class="eyebrow">Classement général 2026</span>
+    <span class="desc">Serveur BALO — clique sur une colonne pour trier.</span>
+  </div>
+</header>
 
-<div class="stats-bar">
-  <div class="stat-item">
+<div class="stats">
+  <div class="stat">
     <div class="stat-value">{{ total_battles }}</div>
     <div class="stat-label">Batailles</div>
   </div>
-  <div class="stat-item">
+  <div class="stat">
     <div class="stat-value">{{ total_players }}</div>
     <div class="stat-label">Participants</div>
   </div>
-  <div class="stat-item">
+  <div class="stat">
     <div class="stat-value">{{ total_participations }}</div>
     <div class="stat-label">Soumissions</div>
   </div>
 </div>
 
+<div class="sort-bar">
+  <span class="sort-label">Trier par</span>
+  <button class="sort-btn active" data-sort="victories">Victoires</button>
+  <button class="sort-btn" data-sort="participations">Participations</button>
+  <button class="sort-btn" data-sort="current_streak">Streak actif</button>
+</div>
+
 <div class="table-wrap">
-  <div class="table-header">
+  <div class="grid5 thead">
     <span>#</span>
     <span>Joueur</span>
-    <span style="text-align:center">Victoires</span>
-    <span style="text-align:center">Participations</span>
-    <span style="text-align:center h-winrate">Taux</span>
-    <span style="text-align:center h-streak">Streak</span>
+    <span class="r sortable th-victories active" data-sort="victories">
+      Victoires <span class="sort-arrow">▼</span>
+    </span>
+    <span class="r sortable th-participations" data-sort="participations">
+      Participations <span class="sort-arrow">▼</span>
+    </span>
+    <span class="r sortable th-streak th-streak col-streak" data-sort="current_streak">
+      Streak <span class="sort-arrow">▼</span>
+    </span>
   </div>
 
-  {% for p in players %}
-  <div class="row">
-    <div class="rank {{ 'gold' if loop.index == 1 else 'silver' if loop.index == 2 else 'bronze' if loop.index == 3 else '' }}">
-      {{ '🥇' if loop.index == 1 else '🥈' if loop.index == 2 else '🥉' if loop.index == 3 else loop.index }}
-    </div>
-    <div class="username">
-      {{ p.username }}
-      {% if p.current_streak >= 3 %}
-      <span class="streak-badge">🔥 ×{{ p.current_streak }}</span>
-      {% endif %}
-    </div>
-    <div class="cell victories">{{ p.victories }}</div>
-    <div class="cell">{{ p.participations }}</div>
-    <div class="cell winrate">{{ p.win_rate }}%</div>
-    <div class="cell streak-col">{{ p.best_streak }}</div>
+  <div id="rows-container">
+    {% if players %}
+      {% for p in players %}
+      <div class="grid5 trow"
+           data-victories="{{ p.victories }}"
+           data-participations="{{ p.participations }}"
+           data-streak="{{ p.current_streak }}"
+           data-best="{{ p.best_streak }}"
+           data-name="{{ p.username }}"
+           data-fire="{{ p.current_streak }}">
+        <div class="c-rank"></div>
+        <div class="c-name">
+          <span class="uname">{{ p.username }}</span>
+          {% if p.current_streak >= 2 %}
+          <span class="fire-pill">🔥 {{ p.current_streak }}</span>
+          {% endif %}
+        </div>
+        <div class="c-num col-victories">{{ p.victories }}</div>
+        <div class="c-num col-participations dim">{{ p.participations }}</div>
+        <div class="c-num col-streak">{{ p.best_streak }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Aucune donnée disponible pour l'instant.</div>
+    {% endif %}
   </div>
-  {% endfor %}
-
-  {% if not players %}
-  <div style="text-align:center; padding: 48px; color: var(--muted);">
-    Aucune donnée disponible pour l'instant.
-  </div>
-  {% endif %}
 </div>
 
-<div class="footer">
-  Le Héraut · BALO · {{ year }}
-</div>
+<footer>
+  <span>Le Héraut · BALO</span>
+  <span>{{ year }}</span>
+</footer>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────
+const container = document.getElementById('rows-container');
+const rows = Array.from(container.querySelectorAll('.trow'));
+let currentSort = 'victories';
+
+// ── SORT ──────────────────────────────────────────────────────────────────
+function sortRows(key) {
+  currentSort = key;
+
+  // Trie les lignes
+  rows.sort((a, b) => {
+    const va = parseInt(a.dataset[key === 'current_streak' ? 'streak' : key]) || 0;
+    const vb = parseInt(b.dataset[key === 'current_streak' ? 'streak' : key]) || 0;
+    if (vb !== va) return vb - va;
+    // Départage secondaire
+    if (key === 'victories')       return parseInt(b.dataset.participations) - parseInt(a.dataset.participations);
+    if (key === 'participations')  return parseInt(b.dataset.victories) - parseInt(a.dataset.victories);
+    return parseInt(b.dataset.victories) - parseInt(a.dataset.victories);
+  });
+
+  // Anime la transition
+  rows.forEach((row, i) => {
+    row.style.transition = 'none';
+    row.style.opacity = '0';
+    row.style.transform = 'translateY(8px)';
+  });
+
+  rows.forEach(row => container.appendChild(row));
+
+  // Met à jour les rangs et highlights
+  rows.forEach((row, i) => {
+    const rank = row.querySelector('.c-rank');
+    const n = i + 1;
+    rank.textContent = n;
+    rank.className = 'c-rank' + (n === 1 ? ' r1' : n === 2 ? ' r2' : n === 3 ? ' r3' : '');
+
+    // Highlight la colonne active
+    const v = row.querySelector('.col-victories');
+    const p = row.querySelector('.col-participations');
+    const s = row.querySelector('.col-streak');
+
+    v.className = 'c-num col-victories' + (key === 'victories' ? ' highlight' : ' dim');
+    p.className = 'c-num col-participations' + (key === 'participations' ? ' highlight' : ' dim');
+    s.className = 'c-num col-streak' + (key === 'current_streak' ? ' highlight' : ' dim');
+
+    // Fade in avec délai décalé
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        row.style.transition = `opacity .3s ${i * 0.02}s, transform .3s ${i * 0.02}s`;
+        row.style.opacity = '1';
+        row.style.transform = 'none';
+      });
+    });
+  });
+
+  updateActiveUI(key);
+}
+
+// ── UI ACTIVE STATE ────────────────────────────────────────────────────────
+function updateActiveUI(key) {
+  // Boutons
+  document.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sort === key);
+  });
+
+  // En-têtes
+  document.querySelectorAll('.thead .sortable').forEach(th => {
+    th.classList.toggle('active', th.dataset.sort === key);
+  });
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────────
+document.querySelectorAll('.sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => sortRows(btn.dataset.sort));
+});
+
+document.querySelectorAll('.thead .sortable').forEach(th => {
+  th.addEventListener('click', () => sortRows(th.dataset.sort));
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+// Applique l'état initial (victoires) + animation d'entrée
+rows.forEach((row, i) => {
+  row.style.opacity = '0';
+  row.style.transform = 'translateY(10px)';
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      row.style.transition = `opacity .4s ${i * 0.025}s, transform .4s ${i * 0.025}s`;
+      row.style.opacity = '1';
+      row.style.transform = 'none';
+    });
+  });
+  // Rangs initiaux déjà corrects (triés côté serveur par victoires)
+  const rank = row.querySelector('.c-rank');
+  const n = i + 1;
+  rank.textContent = n;
+  rank.className = 'c-rank' + (n === 1 ? ' r1' : n === 2 ? ' r2' : n === 3 ? ' r3' : '');
+});
+</script>
 
 </body>
-</html>
-"""
+</html>"""
 
 
 @app.route("/")
@@ -268,7 +493,6 @@ def leaderboard():
     total_battles = db.get_total_battles()
     total_players = len(players)
     total_participations = sum(p["participations"] for p in players)
-    from datetime import datetime
     return render_template_string(
         HTML_TEMPLATE,
         players=players,
