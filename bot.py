@@ -243,11 +243,12 @@ async def reset_bdd(interaction: discord.Interaction):
 
 @bot.tree.command(name="attribuer-victoire", description="[ADMIN] Attribue manuellement la victoire d'une bataille à un joueur")
 @discord.app_commands.check(is_admin)
-async def attribuer_victoire(interaction: discord.Interaction, numero: int, username: str):
+async def attribuer_victoire(interaction: discord.Interaction, numero: int, username: str, user_id: str = None):
     """
     Corrige ou attribue manuellement le gagnant d'une bataille passée.
     numero   : numéro de la bataille (ex: 217)
-    username : pseudo exact du joueur tel qu'il apparaît dans le classement
+    username : pseudo du joueur tel qu'affiché dans le classement
+    user_id  : (optionnel) ID Discord direct, prioritaire sur le username
     """
     await interaction.response.defer(ephemeral=True)
 
@@ -256,30 +257,44 @@ async def attribuer_victoire(interaction: discord.Interaction, numero: int, user
         await interaction.followup.send(f"❌ Bataille #{numero} introuvable en base.", ephemeral=True)
         return
 
-    # Cherche le joueur par username dans les participations de cette bataille
-    participations = db.get_participations(battle["id"])
-    match = None
-    for p in participations:
-        if p["username"].lower() == username.lower():
-            match = p
-            break
+    # Si user_id fourni directement, on l'utilise en priorité
+    if user_id:
+        uid = user_id.strip()
+        # Tente de résoudre le vrai pseudo via Discord
+        try:
+            member = interaction.guild.get_member(int(uid)) or await interaction.guild.fetch_member(int(uid))
+            uname = member.display_name
+        except Exception:
+            uname = username  # Fallback sur le username fourni
 
-    # Si pas trouvé dans les participations, cherche dans user_stats
-    if not match:
-        stats = db.get_user_stats_by_username(username)
-        if stats:
-            match = {"user_id": stats["user_id"], "username": stats["username"]}
+        # Crée une participation si elle n'existe pas encore
+        db.add_participation_if_missing(battle["id"], uid, uname)
+        match = {"user_id": uid, "username": uname}
 
-    if not match:
-        names = [p["username"] for p in participations]
-        await interaction.followup.send(
-            f"❌ Joueur **{username}** introuvable dans la bataille #{numero}.\n"
-            f"Participants connus : {', '.join(names[:20])}",
-            ephemeral=True
-        )
-        return
+    else:
+        # Cherche par username dans les participations
+        participations = db.get_participations(battle["id"])
+        match = None
+        for p in participations:
+            if p["username"].lower() == username.lower():
+                match = p
+                break
 
-    # Applique la victoire
+        if not match:
+            stats = db.get_user_stats_by_username(username)
+            if stats:
+                match = {"user_id": stats["user_id"], "username": stats["username"]}
+
+        if not match:
+            names = [p["username"] for p in participations]
+            await interaction.followup.send(
+                f"❌ Joueur **{username}** introuvable dans la bataille #{numero}.\n"
+                f"💡 Si la personne est en mode streamer, utilise aussi le paramètre `user_id`.\n"
+                f"Participants connus : {', '.join(names[:20])}",
+                ephemeral=True
+            )
+            return
+
     old_winner = battle.get("winner_name", "aucun")
     db.force_winner(battle["id"], match["user_id"], match["username"])
     db.rebuild_user_stats()

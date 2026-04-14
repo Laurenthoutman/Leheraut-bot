@@ -228,6 +228,19 @@ class Database:
         """).fetchall()
         return [dict(r) for r in rows]
 
+    def add_participation_if_missing(self, battle_id: int, user_id: str, username: str):
+        """Ajoute une participation avec message_id=0 si elle n'existe pas encore."""
+        existing = self.conn.execute(
+            "SELECT id FROM participations WHERE battle_id=? AND user_id=?",
+            (battle_id, user_id)
+        ).fetchone()
+        if not existing:
+            self.conn.execute(
+                "INSERT INTO participations (battle_id, user_id, username, message_id) VALUES (?, ?, ?, 0)",
+                (battle_id, user_id, username)
+            )
+            self.conn.commit()
+
     def get_all_participations_for_user(self, user_id: str) -> list:
         rows = self.conn.execute("""
             SELECT p.*, b.number as battle_number
