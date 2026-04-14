@@ -228,6 +228,58 @@ class Database:
         """).fetchall()
         return [dict(r) for r in rows]
 
+    def update_username_if_changed(self, user_id: str, real_name: str) -> str:
+        """
+        Met à jour le username en base si nécessaire.
+        Retourne 'updated', 'merged' ou 'ok'.
+        """
+        # Cherche une entrée avec cet ID
+        row = self.conn.execute(
+            "SELECT * FROM user_stats WHERE user_id=?", (user_id,)
+        ).fetchone()
+
+        if row:
+            if dict(row)["username"] != real_name:
+                self.conn.execute(
+                    "UPDATE user_stats SET username=? WHERE user_id=?",
+                    (real_name, user_id)
+                )
+                # Met aussi à jour les participations
+                self.conn.execute(
+                    "UPDATE participations SET username=? WHERE user_id=?",
+                    (real_name, user_id)
+                )
+                self.conn.commit()
+                return "updated"
+            return "ok"
+
+        # Cherche un doublon par nom similaire (cas mode streamer)
+        # Si une entrée existe avec un nom tronqué (ex: "P...") pour un ID différent
+        # mais qu'on retrouve le même message_id dans les participations, on fusionne
+        dupe = self.conn.execute("""
+            SELECT DISTINCT p.user_id FROM participations p
+            JOIN participations p2 ON p2.message_id = p.message_id AND p2.user_id = ?
+            WHERE p.user_id != ?
+            LIMIT 1
+        """, (user_id, user_id)).fetchone()
+
+        if dupe:
+            old_id = dupe["user_id"]
+            # Fusionne : réattribue toutes les participations et victoires à l'ID réel
+            self.conn.execute(
+                "UPDATE participations SET user_id=?, username=? WHERE user_id=?",
+                (user_id, real_name, old_id)
+            )
+            self.conn.execute(
+                "UPDATE battles SET winner_id=?, winner_name=? WHERE winner_id=?",
+                (user_id, real_name, old_id)
+            )
+            self.conn.execute("DELETE FROM user_stats WHERE user_id=?", (old_id,))
+            self.conn.commit()
+            return "merged"
+
+        return "ok"
+
     def add_participation_if_missing(self, battle_id: int, user_id: str, username: str):
         """Ajoute une participation avec message_id=0 si elle n'existe pas encore."""
         existing = self.conn.execute(

@@ -241,7 +241,198 @@ async def reset_bdd(interaction: discord.Interaction):
     logger.info("Base de données réinitialisée.")
 
 
-@bot.tree.command(name="attribuer-victoire", description="[ADMIN] Attribue manuellement la victoire d'une bataille à un joueur")
+@bot.tree.command(name="reset-bdd", description="[ADMIN] Remet la base de données à zéro (irréversible !)")
+@discord.app_commands.check(is_admin)
+async def reset_bdd(interaction: discord.Interaction):
+    """Efface toutes les données et repart de zéro."""
+    db.reset_all()
+    await interaction.response.send_message(
+        "🗑️ Base de données remise à zéro. Lance `/scanner-historique` pour réimporter.",
+        ephemeral=True
+    )
+    logger.info("Base de données réinitialisée.")
+
+
+@bot.tree.command(name="scanner-historique", description="[ADMIN] Scanne les anciens threads pour récupérer l'historique")
+@discord.app_commands.check(is_admin)
+async def scanner_historique(interaction: discord.Interaction, limite: int = 50, bataille_min: int = 205):
+    """
+    Scanne les threads existants pour importer les participations passées.
+    bataille_min : numéro minimum de bataille à importer (défaut: 205)
+    """
+    await interaction.response.defer(ephemeral=True)
+
+    channel = bot.get_channel(BATTLE_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Salon introuvable.", ephemeral=True)
+        return
+
+    threads = list(channel.threads)
+    archived = [t async for t in channel.archived_threads(limit=limite)]
+    all_threads = threads + archived
+
+    imported = 0
+    battles_found = 0
+
+    for thread in all_threads:
+        name = thread.name
+        battle_number = None
+        for word in name.replace("#", " ").split():
+            if word.isdigit():
+                battle_number = int(word)
+                break
+
+        if battle_number is None or battle_number < bataille_min:
+            continue
+
+        battles_found += 1
+
+        battle = db.get_battle_by_number(battle_number)
+        if not battle:
+            battle_id = db.create_battle(battle_number, name, thread.id, closed=True)
+        else:
+            battle_id = battle["id"]
+
+        participations_thread = {}
+        async for message in thread.history(limit=200):
+            if message.author.bot:
+                continue
+            has_image = any(
+                att.content_type and att.content_type.startswith("image/")
+                for att in message.attachments
+            )
+            if not has_image:
+                continue
+
+            uid = str(message.author.id)
+            uname = message.author.display_name
+
+            already = db.add_participation(battle_id, uid, uname, message.id)
+            if not already:
+                imported += 1
+
+            votes = 0
+            for reaction in message.reactions:
+                if str(reaction.emoji) == VOTE_EMOJI:
+                    votes = max(0, reaction.count - 1)
+            if votes > 0:
+                db.update_votes(battle_id, uid, votes)
+
+            participations_thread[uid] = votes
+
+        if participations_thread:
+            winner_id = max(participations_thread, key=lambda u: participations_thread[u])
+            winner_votes = participations_thread[winner_id]
+            b = db.get_battle_by_number(battle_number)
+            if b and b.get("manual_override"):
+                logger.info(f"Bataille #{battle_number} protégée (manual_override), gagnant conservé.")
+            elif b and not b.get("winner_id"):
+                db.close_battle_silent(battle_id, winner_id, winner_votes)
+
+    db.rebuild_user_stats()
+
+    await interaction.followup.send(
+        f"✅ Scan terminé !\n"
+        f"• **{battles_found}** batailles trouvées (≥ #{bataille_min})\n"
+        f"• **{imported}** nouvelles participations importées\n"
+        f"• Classement reconstruit ✓",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="scanner-pseudos", description="[ADMIN] Scanne tous les membres et corrige les pseudos en base via leur vrai ID")
+@discord.app_commands.check(is_admin)
+async def scanner_pseudos(interaction: discord.Interaction):
+    """
+    Parcourt tous les threads de bataille, résout le vrai ID Discord de chaque auteur,
+    et fusionne les doublons causés par le mode streamer.
+    """
+    await interaction.response.defer(ephemeral=True)
+
+    channel = bot.get_channel(BATTLE_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Salon introuvable.", ephemeral=True)
+        return
+
+    threads = list(channel.threads)
+    archived = [t async for t in channel.archived_threads(limit=250)]
+    all_threads = threads + archived
+
+    corrected = 0
+    merged = 0
+
+    for thread in all_threads:
+        async for message in thread.history(limit=200):
+            if message.author.bot:
+                continue
+            has_image = any(
+                att.content_type and att.content_type.startswith("image/")
+                for att in message.attachments
+            )
+            if not has_image:
+                continue
+
+            real_id = str(message.author.id)
+            real_name = message.author.display_name
+
+            # Met à jour le username en base si l'ID est connu mais le nom a changé
+            result = db.update_username_if_changed(real_id, real_name)
+            if result == "updated":
+                corrected += 1
+            elif result == "merged":
+                merged += 1
+
+    db.rebuild_user_stats()
+
+    await interaction.followup.send(
+        f"✅ Scan des pseudos terminé !\n"
+        f"• **{corrected}** pseudos corrigés\n"
+        f"• **{merged}** doublons fusionnés\n"
+        f"• Classement reconstruit ✓",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="debug-joueur", description="[ADMIN] Inspecte les données brutes d'un joueur en base")
+@discord.app_commands.check(is_admin)
+async def debug_joueur(interaction: discord.Interaction, user_id: str):
+    """Affiche tout ce que la base contient pour un user_id donné."""
+    await interaction.response.defer(ephemeral=True)
+
+    stats = db.get_user_stats(user_id)
+    participations = db.get_all_participations_for_user(user_id)
+    battles_won = db.get_battles_won_by(user_id)
+
+    embed = discord.Embed(title=f"🔍 Debug — {user_id}", color=discord.Color.blurple())
+
+    if stats:
+        embed.add_field(
+            name="📊 user_stats",
+            value=f"Username: **{stats['username']}**\n"
+                  f"Participations: {stats['participations']}\n"
+                  f"Victoires: {stats['victories']}\n"
+                  f"Streak actuel: {stats['current_streak']}\n"
+                  f"Meilleur streak: {stats['best_streak']}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="📊 user_stats", value="❌ Aucune entrée trouvée", inline=False)
+
+    if participations:
+        lines = [f"Bataille #{p['battle_number']} — {p['votes']} votes" for p in participations[:10]]
+        embed.add_field(name=f"🎨 Participations ({len(participations)})", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="🎨 Participations", value="❌ Aucune participation trouvée", inline=False)
+
+    if battles_won:
+        lines = [f"Bataille #{b['number']} — {b['theme']}" for b in battles_won]
+        embed.add_field(name=f"🏆 Victoires ({len(battles_won)})", value="\n".join(lines), inline=False)
+    else:
+        embed.add_field(name="🏆 Victoires", value="❌ Aucune victoire enregistrée", inline=False)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
 @discord.app_commands.check(is_admin)
 async def attribuer_victoire(interaction: discord.Interaction, numero: int, username: str, user_id: str = None):
     """
