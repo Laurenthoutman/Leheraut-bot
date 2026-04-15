@@ -50,6 +50,23 @@ class Database:
 
     # ── BATTLES ──────────────────────────────────────────────────────────
 
+    def open_battle(self, number: int, theme: str, thread_id: int):
+        """Crée ou réouvre une bataille existante."""
+        existing = self.conn.execute(
+            "SELECT id FROM battles WHERE number=?", (number,)
+        ).fetchone()
+        if existing:
+            self.conn.execute(
+                "UPDATE battles SET theme=?, thread_id=?, closed=0 WHERE number=?",
+                (theme, thread_id, number)
+            )
+        else:
+            self.conn.execute(
+                "INSERT INTO battles (number, theme, thread_id, closed) VALUES (?, ?, ?, 0)",
+                (number, theme, thread_id)
+            )
+        self.conn.commit()
+
     def create_battle(self, number: int, theme: str, thread_id: int) -> int:
         """Crée une bataille uniquement si elle n'existe pas déjà."""
         try:

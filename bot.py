@@ -138,7 +138,7 @@ async def monstats(interaction: discord.Interaction):
 @discord.app_commands.check(is_admin)
 async def nouvelle_bataille(interaction: discord.Interaction, numero: int, theme: str, thread_id: str):
     tid = int(thread_id)
-    db.create_battle(numero, theme, tid)
+    db.open_battle(numero, theme, tid)
     await interaction.response.send_message(
         f"⚔️ **Bataille #{numero}** — *{theme}* enregistrée ! Le thread `{tid}` est surveillé.",
         ephemeral=True
