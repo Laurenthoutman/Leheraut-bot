@@ -109,7 +109,7 @@ async def classement(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="monstats", description="Affiche tes statistiques personnelles")
+@bot.tree.command(name="messtats", description="Affiche tes statistiques personnelles")
 async def monstats(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     stats = db.get_user_stats(user_id)
