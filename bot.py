@@ -297,6 +297,7 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 30,
         if not battle:
             db.create_battle(battle_number, thread.name, thread.id)
             battle = db.get_battle_by_number(battle_number)
+        # Ne jamais écraser une bataille existante — on importe seulement les participations
 
         async for message in thread.history(limit=200):
             if message.author.bot:
@@ -389,6 +390,79 @@ async def exporter_donnees(interaction: discord.Interaction):
             ephemeral=True
         )
 
+
+@bot.tree.command(name="importer-victoires", description="[ADMIN] Importe les gagnants depuis un fichier CSV")
+@discord.app_commands.check(is_admin)
+async def importer_victoires(interaction: discord.Interaction, fichier: discord.Attachment):
+    await interaction.response.defer(ephemeral=True)
+
+    import csv, io
+
+    try:
+        content = await fichier.read()
+        text = content.decode("utf-8")
+        reader = csv.DictReader(io.StringIO(text))
+    except Exception as e:
+        await interaction.followup.send(f"❌ Impossible de lire le fichier : {e}", ephemeral=True)
+        return
+
+    success = 0
+    skipped = 0
+    errors = []
+
+    for row in reader:
+        try:
+            numero = int(row["numero"].strip())
+            username = row["username"].strip()
+            user_id = row.get("user_id", "").strip() or None
+
+            battle = db.get_battle_by_number(numero)
+            if not battle:
+                errors.append(f"#{numero} : bataille introuvable")
+                skipped += 1
+                continue
+
+            uid = user_id
+            uname = username
+
+            if uid:
+                try:
+                    member = interaction.guild.get_member(int(uid)) or await interaction.guild.fetch_member(int(uid))
+                    uname = member.display_name
+                except Exception:
+                    uname = username
+                db.add_participation_if_missing(battle["id"], uid, uname)
+            else:
+                participations = db.get_participations(battle["id"])
+                match = next((p for p in participations if p["username"].lower() == username.lower()), None)
+                if match:
+                    uid = match["user_id"]
+                    uname = match["username"]
+                else:
+                    stats = db.get_user_stats_by_username(username)
+                    if stats:
+                        uid = stats["user_id"]
+                        uname = stats["username"]
+                    else:
+                        errors.append(f"#{numero} : **{username}** introuvable — ajoute l'user_id dans le CSV")
+                        skipped += 1
+                        continue
+
+            db.set_winner(battle["id"], uid, uname)
+            success += 1
+            logger.info(f"Victoire #{numero} → {uname}")
+
+        except Exception as e:
+            errors.append(f"#{row.get('numero','?')} : erreur — {e}")
+            skipped += 1
+
+    db.rebuild_user_stats()
+
+    rapport = f"✅ **Import terminé !**\n• {success} victoires importées\n• {skipped} ignorées"
+    if errors:
+        rapport += f"\n\n⚠️ **Problèmes :**\n" + "\n".join(errors[:10])
+
+    await interaction.followup.send(rapport, ephemeral=True)
 
 
 @discord.app_commands.check(is_admin)

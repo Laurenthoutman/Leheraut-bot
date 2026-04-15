@@ -51,16 +51,15 @@ class Database:
     # ── BATTLES ──────────────────────────────────────────────────────────
 
     def create_battle(self, number: int, theme: str, thread_id: int) -> int:
+        """Crée une bataille uniquement si elle n'existe pas déjà."""
         try:
             cur = self.conn.execute(
                 "INSERT OR IGNORE INTO battles (number, theme, thread_id) VALUES (?, ?, ?)",
                 (number, theme, thread_id)
             )
             self.conn.commit()
-            if cur.lastrowid:
-                return cur.lastrowid
             row = self.conn.execute("SELECT id FROM battles WHERE number=?", (number,)).fetchone()
-            return row["id"]
+            return row["id"] if row else -1
         except Exception as e:
             print(f"[DB] create_battle error: {e}")
             return -1
