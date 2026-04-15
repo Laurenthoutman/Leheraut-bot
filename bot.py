@@ -6,7 +6,7 @@ from database import Database
 import logging
 
 load_dotenv()
- 
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,10 @@ async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     if removed:
         db.rebuild_user_stats()
         logger.info(f"🗑️ Participation retirée — message {payload.message_id} supprimé dans {channel.name}")
+
+
+@bot.event
+async def on_message(message):
     """Détecte automatiquement les soumissions de logos dans les threads actifs."""
     if message.author.bot:
         return
