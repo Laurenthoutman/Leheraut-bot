@@ -106,7 +106,7 @@ async def classement(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="monstats", description="Affiche tes statistiques personnelles")
+@bot.tree.command(name="monrang", description="Affiche tes statistiques personnelles")
 async def monstats(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     stats = db.get_user_stats(user_id)
@@ -516,7 +516,7 @@ ROLE_THRESHOLDS = [
     {"name": "🖌️ Compétiteur", "participations": 5,  "victories": 0},
     {"name": "⭐ Finaliste",    "participations": 0,  "victories": 1},
     {"name": "🏆 Champion",     "participations": 0,  "victories": 3},
-    {"name": "👑 Légende BALO", "participations": 0,  "victories": 5},
+    {"name": "👑 Légende", "participations": 0,  "victories": 5},
 ]
 
 
