@@ -41,14 +41,12 @@ async def on_ready():
 @bot.event
 async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
     """Retire automatiquement une participation quand un logo est supprimé."""
-    # Vérifie que c'est dans un thread du salon bataille
     channel = bot.get_channel(payload.channel_id)
     if not isinstance(channel, discord.Thread):
         return
     if channel.parent_id != BATTLE_CHANNEL_ID:
         return
 
-    # Cherche si ce message_id correspond à une participation
     removed = db.remove_participation_by_message(payload.message_id)
     if removed:
         db.rebuild_user_stats()
@@ -106,7 +104,7 @@ async def classement(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="monrang", description="Affiche tes statistiques personnelles")
+@bot.tree.command(name="monstats", description="Affiche tes statistiques personnelles")
 async def monstats(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     stats = db.get_user_stats(user_id)
@@ -516,7 +514,7 @@ ROLE_THRESHOLDS = [
     {"name": "🖌️ Compétiteur", "participations": 5,  "victories": 0},
     {"name": "⭐ Finaliste",    "participations": 0,  "victories": 1},
     {"name": "🏆 Champion",     "participations": 0,  "victories": 3},
-    {"name": "👑 Légende", "participations": 0,  "victories": 5},
+    {"name": "👑 Légende BALO", "participations": 0,  "victories": 5},
 ]
 
 
