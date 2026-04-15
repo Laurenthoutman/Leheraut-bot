@@ -81,6 +81,7 @@ async def on_message(message):
         message.id
     )
     if not already:
+        db.rebuild_user_stats()
         logger.info(f"📝 Participation : {message.author.display_name} → bataille #{battle['number']}")
 
     await bot.process_commands(message)
