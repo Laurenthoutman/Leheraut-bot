@@ -39,7 +39,20 @@ async def on_ready():
 
 
 @bot.event
-async def on_message(message):
+async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+    """Retire automatiquement une participation quand un logo est supprimé."""
+    # Vérifie que c'est dans un thread du salon bataille
+    channel = bot.get_channel(payload.channel_id)
+    if not isinstance(channel, discord.Thread):
+        return
+    if channel.parent_id != BATTLE_CHANNEL_ID:
+        return
+
+    # Cherche si ce message_id correspond à une participation
+    removed = db.remove_participation_by_message(payload.message_id)
+    if removed:
+        db.rebuild_user_stats()
+        logger.info(f"🗑️ Participation retirée — message {payload.message_id} supprimé dans {channel.name}")
     """Détecte automatiquement les soumissions de logos dans les threads actifs."""
     if message.author.bot:
         return
@@ -317,7 +330,67 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 30,
     )
 
 
-@bot.tree.command(name="whois", description="[ADMIN] Identifie un membre Discord depuis son ID")
+@bot.tree.command(name="exporter-donnees", description="[ADMIN] Exporte toutes les données en CSV par message privé")
+@discord.app_commands.check(is_admin)
+async def exporter_donnees(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    import csv
+    import io
+
+    # ── Fichier 1 : victoires par bataille ──
+    battles = db.get_recent_battles(limit=9999)
+    victories_buffer = io.StringIO()
+    writer = csv.writer(victories_buffer)
+    writer.writerow(["Numéro", "Thème", "Gagnant", "Thread ID", "Date"])
+    for b in sorted(battles, key=lambda x: x["number"]):
+        writer.writerow([
+            b["number"],
+            b["theme"],
+            b.get("winner_name") or "Non défini",
+            b["thread_id"],
+            b["created_at"]
+        ])
+    victories_file = discord.File(
+        fp=io.BytesIO(victories_buffer.getvalue().encode("utf-8")),
+        filename="balo-victoires.csv"
+    )
+
+    # ── Fichier 2 : stats de tous les joueurs ──
+    players = db.get_all_stats()
+    stats_buffer = io.StringIO()
+    writer2 = csv.writer(stats_buffer)
+    writer2.writerow(["User ID", "Username", "Victoires", "Participations", "Streak actuel", "Meilleur streak"])
+    for p in players:
+        writer2.writerow([
+            p["user_id"],
+            p["username"],
+            p["victories"],
+            p["participations"],
+            p["current_streak"],
+            p["best_streak"]
+        ])
+    stats_file = discord.File(
+        fp=io.BytesIO(stats_buffer.getvalue().encode("utf-8")),
+        filename="balo-stats.csv"
+    )
+
+    # ── Envoi en DM ──
+    try:
+        await interaction.user.send(
+            f"📦 **Export BALO — {len(battles)} batailles · {len(players)} joueurs**\n"
+            f"Sauvegarde du {discord.utils.format_dt(discord.utils.utcnow(), style='d')}",
+            files=[victories_file, stats_file]
+        )
+        await interaction.followup.send("✅ Export envoyé en message privé !", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Impossible d'envoyer un DM. Vérifie que tes messages privés sont ouverts.",
+            ephemeral=True
+        )
+
+
+
 @discord.app_commands.check(is_admin)
 async def whois(interaction: discord.Interaction, user_id: str):
     await interaction.response.defer(ephemeral=True)

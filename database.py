@@ -1,7 +1,9 @@
 import sqlite3
 import os
+import logging
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 DB_PATH = os.getenv("DB_PATH", "heraut.db")
 
 
@@ -87,6 +89,18 @@ class Database:
         self.rebuild_user_stats()
 
     # ── PARTICIPATIONS ────────────────────────────────────────────────────
+
+    def remove_participation_by_message(self, message_id: int) -> bool:
+        """Supprime une participation par son message_id. Retourne True si trouvée."""
+        row = self.conn.execute(
+            "SELECT * FROM participations WHERE message_id=?", (message_id,)
+        ).fetchone()
+        if not row:
+            return False
+        self.conn.execute("DELETE FROM participations WHERE message_id=?", (message_id,))
+        self.conn.commit()
+        logger.info(f"Participation supprimée : user {row['user_id']} bataille {row['battle_id']}")
+        return True
 
     def add_participation(self, battle_id: int, user_id: str, username: str, message_id: int) -> bool:
         """Retourne True si la participation existait déjà."""
@@ -240,8 +254,12 @@ class Database:
         return row["c"] if row else 0
 
     def get_recent_battles(self, limit: int = 10) -> list:
-        rows = self.conn.execute("""
-            SELECT * FROM battles WHERE closed=1
-            ORDER BY number DESC LIMIT ?
-        """, (limit,)).fetchall()
+        if limit >= 9999:
+            rows = self.conn.execute(
+                "SELECT * FROM battles ORDER BY number DESC"
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM battles ORDER BY number DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [dict(r) for r in rows]
