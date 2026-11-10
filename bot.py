@@ -390,11 +390,21 @@ async def scanner_victoires(
         leaders = {}
         try:
             async for message in matching_threads[0].history(limit=None):
-                if message.author.bot or not any(
-                    attachment.content_type and attachment.content_type.startswith("image/")
+                has_image = any(
+                    (attachment.content_type or "").startswith("image/")
                     for attachment in message.attachments
-                ):
+                ) or any(
+                    embed.image.url or embed.thumbnail.url
+                    for embed in message.embeds
+                )
+                has_imgur_link = re.search(
+                    r"https?://(?:i\.|www\.)?imgur\.com/[^\s<>]+",
+                    message.content,
+                    re.IGNORECASE,
+                )
+                if message.author.bot or not (has_image or has_imgur_link):
                     continue
+
                 votes = sum(
                     reaction.count for reaction in message.reactions
                     if str(reaction.emoji) == VOTE_EMOJI
