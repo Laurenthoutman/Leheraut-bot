@@ -332,6 +332,105 @@ async def scanner_historique(interaction: discord.Interaction, limite: int = 30,
         ephemeral=True
     )
 
+@bot.tree.command(name="scanner-victoires", description="[ADMIN] Prépare un CSV des gagnants d’après les votes ✅")
+@discord.app_commands.check(is_admin)
+async def scanner_victoires(
+    interaction: discord.Interaction,
+    bataille_min: int = 205,
+    bataille_max: int | None = None,
+):
+    import csv
+    import io
+    import re
+
+    await interaction.response.defer(ephemeral=True)
+    channel = bot.get_channel(BATTLE_CHANNEL_ID)
+    if not channel:
+        await interaction.followup.send("❌ Salon des batailles introuvable.", ephemeral=True)
+        return
+
+    threads = {thread.id: thread for thread in channel.threads}
+    async for thread in channel.archived_threads(limit=None):
+        threads[thread.id] = thread
+
+    candidates = {}
+    for thread in threads.values():
+        match = re.search(r"\bbataille\s+de\s+logos\s*#?\s*(\d+)\b", thread.name, re.IGNORECASE)
+        if match:
+            number = int(match[1])
+            if number >= bataille_min and (bataille_max is None or number <= bataille_max):
+                candidates.setdefault(number, []).append(thread)
+
+    winners = io.StringIO()
+    report = io.StringIO()
+    winner_csv = csv.writer(winners)
+    report_csv = csv.writer(report)
+    winner_csv.writerow(["numero", "username", "user_id"])
+    report_csv.writerow(["numero", "etat", "gagnant", "votes", "message"])
+    last = bataille_max if bataille_max is not None else max(candidates, default=bataille_min - 1)
+    if last < bataille_min or last - bataille_min >= 500:
+        await interaction.followup.send(
+            "❌ Aucune plage valide. Indique au maximum 500 batailles par scan.",
+            ephemeral=True,
+        )
+        return
+
+    count = 0
+    for number in range(bataille_min, last + 1):
+        battle = db.get_battle_by_number(number)
+        if battle and battle["winner_id"]:
+            report_csv.writerow([number, "Gagnant déjà enregistré", battle["winner_name"], "", ""])
+            continue
+        matching_threads = candidates.get(number, [])
+        if len(matching_threads) != 1:
+            report_csv.writerow([number, "Fil introuvable ou ambigu", "", "", ""])
+            continue
+
+        highest_votes = 0
+        leaders = {}
+        try:
+            async for message in matching_threads[0].history(limit=None):
+                if message.author.bot or not any(
+                    attachment.content_type and attachment.content_type.startswith("image/")
+                    for attachment in message.attachments
+                ):
+                    continue
+                votes = sum(
+                    reaction.count for reaction in message.reactions
+                    if str(reaction.emoji) == VOTE_EMOJI
+                )
+                if votes == 0 or votes < highest_votes:
+                    continue
+                if votes > highest_votes:
+                    highest_votes = votes
+                    leaders.clear()
+                leaders[message.author.id] = message
+        except discord.HTTPException:
+            report_csv.writerow([number, "Lecture du fil impossible", "", "", ""])
+            continue
+
+        if len(leaders) != 1:
+            state = "Égalité" if leaders else "Aucun vote sur un logo"
+            report_csv.writerow([number, state, "", highest_votes, ""])
+            continue
+
+        winner = next(iter(leaders.values()))
+        state = "Prêt à importer" if battle else "Bataille à enregistrer avant import"
+        report_csv.writerow([number, state, winner.author.display_name, highest_votes, winner.jump_url])
+        winner_csv.writerow([number, winner.author.display_name, winner.author.id])
+        count += 1
+
+    await interaction.followup.send(
+        f"Scan des batailles #{bataille_min} à #{last} terminé : {count} gagnants proposés. "
+        "Vérifie le rapport et retire les éditions encore ouvertes avant /importer-victoires.",
+        files=[
+            discord.File(io.BytesIO(winners.getvalue().encode("utf-8")), filename="gagnants-proposes.csv"),
+            discord.File(io.BytesIO(report.getvalue().encode("utf-8")), filename="rapport-victoires.csv"),
+        ],
+        ephemeral=True,
+    )
+
+
 
 @bot.tree.command(name="exporter-donnees", description="[ADMIN] Exporte toutes les données en CSV par message privé")
 @discord.app_commands.check(is_admin)
